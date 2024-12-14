@@ -103,7 +103,7 @@ namespace Play.Trading.Service
         private void AddMassTransit(IServiceCollection services)
         {
             services.AddMassTransit(configure => {
-                configure.usingPlayEconomyRabbitMq(retryConfigurator => {
+                configure.usingPlayEconomyMessageBroker(Configuration, retryConfigurator => {
                     retryConfigurator.Interval(3, TimeSpan.FromSeconds(5));
                     retryConfigurator.Ignore<UnknownItemException>();
                 });
