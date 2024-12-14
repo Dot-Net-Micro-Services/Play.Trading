@@ -6,7 +6,8 @@ Trading Microservice
 $version="1.0.1"
 $env:GH_OWNER="Dot-Net-Micro-Services"
 $env:GH_PAT="[PAT HERE]"
-docker build --secret id=GH_OWNER --secret id=GH_PAT -t play.trading:$version .
+$acrname="playeconomyacrdev"
+docker build --secret id=GH_OWNER --secret id=GH_PAT -t "$acrname.azurecr.io/play.trading:$version" .
 ```
 
 ## Run the docker image
@@ -17,4 +18,10 @@ docker run -it --rm -p 5006:5006 --name trading
 -e MongoDbSettings__ConnectionString=$cosmosDbConnectionString
 -e ServiceBusSettings__ConnectionString=$serviceBusConnectionString
 -e ServiceSettings__MessageBroker="SERVICEBUS" play.trading:$version
+```
+
+## Publish the docker image
+```powershell
+az acr login --name $acrname
+docker push "$acrname.azurecr.io/play.trading:$version"
 ```
