@@ -34,7 +34,7 @@ kubectl create namespace $namespace
 
 ## Create the Kubernets pod
 ```powershell
-kubernetes apply -f .\kubernetes\trading.yaml -n $namespace
+kubectl apply -f .\kubernetes\trading.yaml -n $namespace
 ```
 
 ## Creating the Workload Identity and grant key vault access
@@ -52,4 +52,15 @@ az role assignment create --assignee $IDENTITY_CLIENT_ID --role "Key Vault Secre
 $aksname="playeconomy-aks-dev"
 $AKS_OIDC_ISSUER=az aks show --name $aksname --resource-group $appname --query "oidcIssuerProfile.issuerUrl" -otsv
 az identity federated-credential create --name $namespace --identity-name $namespace --resource-group $appname --issuer $AKS_OIDC_ISSUER --subject "system:serviceaccount:${namespace}:${namespace}-serviceaccount"
+```
+
+## Install the helm chart
+```powershell
+$helmUser=[guid]::Empty.Guid
+$helmPassword=az acr login --name $acrname --expose-token --output tsv --query accessToken
+
+helm registry login "$acrname.azurecr.io" --username $helmUser --password $helmPassword
+
+$chartVersion="0.1.0"
+helm upgrade trading-service oci://$acrname.azurecr.io/helm/microservice --version $chartVersion -f .\helm\values.yaml -n $namespace --install
 ```
