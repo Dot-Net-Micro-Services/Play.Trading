@@ -25,3 +25,31 @@ docker run -it --rm -p 5006:5006 --name trading
 az acr login --name $acrname
 docker push "$acrname.azurecr.io/play.trading:$version"
 ```
+
+## Create the Kubernets namespace
+```powershell
+$namespace="trading"
+kubectl create namespace $namespace
+```
+
+## Create the Kubernets pod
+```powershell
+kubernetes apply -f .\kubernetes\trading.yaml -n $namespace
+```
+
+## Creating the Workload Identity and grant key vault access
+```powershell
+$appname="playeconomy"
+$keyvaultname="playeconomy-vault-dev"
+az identity create --resource-group $appname --name $namespace
+$IDENTITY_CLIENT_ID=az identity show --resource-group $appname --name $namespace --query clientId -otsv
+$SUBSCRIPTION_ID=az account show --query id -otsv
+az role assignment create --assignee $IDENTITY_CLIENT_ID --role "Key Vault Secrets User" --scope "/subscriptions/$SUBSCRIPTION_ID/resourcegroups/$appname/providers/Microsoft.KeyVault/vaults/$keyvaultname"
+```
+
+## Establish the Federated Identity Credential
+```powershell
+$aksname="playeconomy-aks-dev"
+$AKS_OIDC_ISSUER=az aks show --name $aksname --resource-group $appname --query "oidcIssuerProfile.issuerUrl" -otsv
+az identity federated-credential create --name $namespace --identity-name $namespace --resource-group $appname --issuer $AKS_OIDC_ISSUER --subject "system:serviceaccount:${namespace}:${namespace}-serviceaccount"
+```
