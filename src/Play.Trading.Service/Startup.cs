@@ -17,6 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi.Models;
+using MongoDB.Driver.Core.Configuration;
 using Play.Common.HealthChecks;
 using Play.Common.Identity;
 using Play.Common.MassTransit;
@@ -69,6 +70,11 @@ namespace Play.Trading.Service
             
             services.AddHealthChecks()
                     .AddMongoDbHealthCheck();
+
+            services.AddLogging(loggingBuilder => {
+                var seqSettings = Configuration.GetSection(nameof(SeqSettings)).Get<SeqSettings>();
+                loggingBuilder.AddSeq(serverUrl: seqSettings.ServerUrl);
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
