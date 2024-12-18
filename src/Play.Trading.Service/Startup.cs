@@ -9,13 +9,12 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
 using Play.Common.HealthChecks;
 using Play.Common.Identity;
 using Play.Common.Logging;
 using Play.Common.MassTransit;
 using Play.Common.MongoDB;
+using Play.Common.OpenTelemetry;
 using Play.Common.Settings;
 using Play.Identity.Contracts;
 using Play.Inventory.Contracts;
@@ -65,23 +64,8 @@ namespace Play.Trading.Service
             services.AddHealthChecks()
                     .AddMongoDbHealthCheck();
 
-            services.AddSeqLogging(Configuration);
-
-            services.AddOpenTelemetryTracing(builder => {
-                var serviceSettings = Configuration.GetSection(nameof(ServiceSettings)).Get<ServiceSettings>();
-                builder.AddSource(serviceSettings.ServiceName)
-                        .AddSource("MassTransit")
-                        .SetResourceBuilder(
-                            ResourceBuilder.CreateDefault()
-                                .AddService(serviceName: serviceSettings.ServiceName)
-                        ).AddHttpClientInstrumentation()
-                        .AddAspNetCoreInstrumentation()
-                        .AddJaegerExporter(options => {
-                            var jaegerSettings = Configuration.GetSection(nameof(JaegerSettings)).Get<JaegerSettings>();
-                            options.AgentPort = jaegerSettings.Port;
-                            options.AgentHost = jaegerSettings.Host;
-                        });
-            });
+            services.AddSeqLogging(Configuration)
+                    .AddTracing(Configuration);
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
