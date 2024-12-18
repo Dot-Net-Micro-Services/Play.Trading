@@ -111,7 +111,8 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                     context.Instance.PurchaseTotal.Value,
                     context.Instance.CorrelationId
                 ))
-                .TransitionTo(ItemsGranted),
+                .TransitionTo(ItemsGranted)
+                .ThenAsync(async context => await hub.SendStatusAsync(context.Instance)),
             When(GrantItemsFaulted)
                 .Then(context => {
                     context.Instance.ErrorMessage = context.Data.Exceptions.First()?.Message;
