@@ -1,9 +1,11 @@
 using System;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Amazon.Runtime.Internal.Util;
 using MassTransit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Play.Trading.Service.Contracts;
 using Play.Trading.Service.Dtos;
 using Play.Trading.Service.StateMachines;
@@ -17,13 +19,16 @@ public class PurchaseController : ControllerBase
 {
     private readonly IPublishEndpoint publishEndpoint;
     private readonly IRequestClient<GetPurchaseState> purchaseClient;
+    private readonly ILogger<PurchaseController> logger;
 
     public PurchaseController(
-        IPublishEndpoint publishEndpoint, 
-        IRequestClient<GetPurchaseState> purchaseClient)
+        IPublishEndpoint publishEndpoint,
+        IRequestClient<GetPurchaseState> purchaseClient,
+        ILogger<PurchaseController> logger)
     {
         this.publishEndpoint = publishEndpoint;
         this.purchaseClient = purchaseClient;
+        this.logger = logger;
     }
 
     [HttpGet("status/{idempotencyId}")]
@@ -53,6 +58,14 @@ public class PurchaseController : ControllerBase
     public async Task<IActionResult> PostAsync(SubmitPurchaseDto purchase)
     {
         var userId = User.FindFirstValue("sub");
+
+        logger.LogInformation(
+            "Received Purchase request of {Quantity} of item {ItemId} from user {UserId} with CorrelationId {IdempotencyId}",
+            purchase.Quantity,
+            purchase.ItemId,
+            userId,
+            purchase.IdempotencyId.Value
+        );
 
         var message = new PurchaseRequested(
             Guid.Parse(userId),
