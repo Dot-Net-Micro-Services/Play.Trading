@@ -66,15 +66,9 @@ namespace Play.Trading.Service
                     .AddMongoDbHealthCheck();
 
             services.AddSeqLogging(Configuration)
-                    .AddTracing(Configuration);
-
-            services.AddOpenTelemetryMetrics(builder => {
-                var serviceSettings = Configuration.GetSection(nameof(ServiceSettings)).Get<ServiceSettings>();
-                builder.AddMeter(serviceSettings.ServiceName)
-                        .AddHttpClientInstrumentation()
-                        .AddAspNetCoreInstrumentation()
-                        .AddPrometheusExporter();
-            });
+                    .AddTracing(Configuration)
+                    .AddMetrics(Configuration);
+            
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
