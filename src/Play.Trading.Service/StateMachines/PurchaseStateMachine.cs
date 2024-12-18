@@ -1,8 +1,5 @@
 using System;
 using System.Linq;
-using Amazon.Runtime.Internal.Util;
-using Automatonymous;
-using Automatonymous.Activities;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using Play.Identity.Contracts;
@@ -57,37 +54,37 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
         Initially(
             When(PurchaseRequested)
                 .Then(context => {
-                    context.Instance.UserId = context.Data.UserId;
-                    context.Instance.ItemId = context.Data.ItemId;
-                    context.Instance.Quantity = context.Data.Quantity;
-                    context.Instance.Received = DateTimeOffset.UtcNow;
-                    context.Instance.LastUpdated = context.Instance.Received;
+                    context.Saga.UserId = context.Message.UserId;
+                    context.Saga.ItemId = context.Message.ItemId;
+                    context.Saga.Quantity = context.Message.Quantity;
+                    context.Saga.Received = DateTimeOffset.UtcNow;
+                    context.Saga.LastUpdated = context.Saga.Received;
                     logger.LogInformation(
                         "Calculating total price for purchase with correlationId {CorrelationId}...",
-                        context.Instance.CorrelationId
+                        context.Saga.CorrelationId
                     );
                 })
                 .Activity(x => x.OfType<CalculatePurchaseTotalActivity>())
                 .Send(context => new GrantItems(
-                    context.Instance.UserId,
-                    context.Instance.ItemId,
-                    context.Instance.Quantity,
-                    context.Instance.CorrelationId
+                    context.Saga.UserId,
+                    context.Saga.ItemId,
+                    context.Saga.Quantity,
+                    context.Saga.CorrelationId
                 ))
                 .TransitionTo(Accepted)
                 .Catch<Exception>(ex => ex
                     .Then(context => {
-                        context.Instance.ErrorMessage = context.Exception.Message;
-                        context.Instance.LastUpdated = DateTimeOffset.UtcNow;
+                        context.Saga.ErrorMessage = context.Exception.Message;
+                        context.Saga.LastUpdated = DateTimeOffset.UtcNow;
                         logger.LogError(
                             context.Exception,
                             "Could not Calculate the total price of purchase with CorrelationId {CorrelationId}. Error: {ErrorMessage}",
-                            context.Instance.CorrelationId,
-                            context.Instance.ErrorMessage
+                            context.Saga.CorrelationId,
+                            context.Saga.ErrorMessage
                         );
                     })
                     .TransitionTo(Faulted)
-                    .ThenAsync(async context => await hub.SendStatusAsync(context.Instance))
+                    .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))
                 )
         );
     }
@@ -99,32 +96,32 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
             Ignore(PurchaseRequested),
             When(InventoryItemsGranted)
                 .Then(context => {
-                    context.Instance.LastUpdated = DateTimeOffset.UtcNow;
+                    context.Saga.LastUpdated = DateTimeOffset.UtcNow;
                     logger.LogInformation(
                         "Items of purchase with CorrelationId {CorrelationId} have been granted to user {userId}.",
-                        context.Instance.CorrelationId,
-                        context.Instance.UserId
+                        context.Saga.CorrelationId,
+                        context.Saga.UserId
                     );
                 })
                 .Send(context => new DebitGil(
-                    context.Instance.UserId,
-                    context.Instance.PurchaseTotal.Value,
-                    context.Instance.CorrelationId
+                    context.Saga.UserId,
+                    context.Saga.PurchaseTotal.Value,
+                    context.Saga.CorrelationId
                 ))
                 .TransitionTo(ItemsGranted)
-                .ThenAsync(async context => await hub.SendStatusAsync(context.Instance)),
+                .ThenAsync(async context => await hub.SendStatusAsync(context.Saga)),
             When(GrantItemsFaulted)
                 .Then(context => {
-                    context.Instance.ErrorMessage = context.Data.Exceptions.First()?.Message;
-                    context.Instance.LastUpdated = DateTimeOffset.UtcNow;
+                    context.Saga.ErrorMessage = context.Message.Exceptions.First()?.Message;
+                    context.Saga.LastUpdated = DateTimeOffset.UtcNow;
                     logger.LogError(
                         "Couldnot Grant Items for purchase with CorrelationId {CorrelationId}. Error: {ErrorMessage}",
-                        context.Instance.CorrelationId,
-                        context.Instance.ErrorMessage
+                        context.Saga.CorrelationId,
+                        context.Saga.ErrorMessage
                     );
                 })
                 .TransitionTo(Faulted)
-                .ThenAsync(async context => await hub.SendStatusAsync(context.Instance))
+                .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))
         );
     }
 
@@ -136,34 +133,37 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
             Ignore(InventoryItemsGranted),
             When(GilDebited)
                 .Then(context => {
-                    context.Instance.LastUpdated = DateTimeOffset.UtcNow;
+                    context.Saga.LastUpdated = DateTimeOffset.UtcNow;
                     logger.LogInformation(
                         "The total price of purchase with CorrelationId {CorrelationId} has been debited from {userId}. Purchase Compelete",
-                        context.Instance.CorrelationId,
-                        context.Instance.UserId
+                        context.Saga.CorrelationId,
+                        context.Saga.UserId
                     );
                 })
                 .TransitionTo(Completed)
-                .ThenAsync(async context => await hub.SendStatusAsync(context.Instance)),
+                .ThenAsync(async context => {
+                    logger.LogInformation("Purchase Order {CorrelationId} Completed", context.Saga.CorrelationId);
+                    await hub.SendStatusAsync(context.Saga);
+                }),
             When(DebitGilFaulted)
                 .Send(context => new SubtractItems(
-                    context.Instance.UserId,
-                    context.Instance.ItemId,
-                    context.Instance.Quantity,
-                    context.Instance.CorrelationId
+                    context.Saga.UserId,
+                    context.Saga.ItemId,
+                    context.Saga.Quantity,
+                    context.Saga.CorrelationId
                 ))
                 .Then(context => {
-                    context.Instance.ErrorMessage = context.Data.Exceptions.First().Message;
-                    context.Instance.LastUpdated = DateTimeOffset.UtcNow;
+                    context.Saga.ErrorMessage = context.Message.Exceptions.First().Message;
+                    context.Saga.LastUpdated = DateTimeOffset.UtcNow;
                     logger.LogError(
                         "Couldnot debit the total price of purchase with CorrelationId {CorrelationId} from user {userId}. Error: {ErrorMessage}",
-                        context.Instance.CorrelationId,
-                        context.Instance.UserId,
-                        context.Instance.ErrorMessage
+                        context.Saga.CorrelationId,
+                        context.Saga.UserId,
+                        context.Saga.ErrorMessage
                     );
                 })
                 .TransitionTo(Faulted)
-                .ThenAsync(async context => await hub.SendStatusAsync(context.Instance))
+                .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))
         );
     }
 
@@ -181,7 +181,7 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
     {
         DuringAny(
             When(GetPurchaseState)
-            .Respond(x => x.Instance)
+            .Respond(x => x.Saga)
         );
     }
 
