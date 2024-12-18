@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using OpenTelemetry.Metrics;
 using Play.Common.HealthChecks;
 using Play.Common.Identity;
 using Play.Common.Logging;
@@ -66,6 +67,14 @@ namespace Play.Trading.Service
 
             services.AddSeqLogging(Configuration)
                     .AddTracing(Configuration);
+
+            services.AddOpenTelemetryMetrics(builder => {
+                var serviceSettings = Configuration.GetSection(nameof(ServiceSettings)).Get<ServiceSettings>();
+                builder.AddMeter(serviceSettings.ServiceName)
+                        .AddHttpClientInstrumentation()
+                        .AddAspNetCoreInstrumentation()
+                        .AddPrometheusExporter();
+            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -85,6 +94,8 @@ namespace Play.Trading.Service
                         .AllowCredentials();
                 });
             }
+
+            app.UseOpenTelemetryPrometheusScrapingEndpoint();
 
             app.UseHttpsRedirection();
 

@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using MassTransit;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Play.Common.Settings;
 using Play.Identity.Contracts;
 using Play.Inventory.Contracts;
 using Play.Trading.Service.Activities;
@@ -14,6 +18,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
 {
     private readonly MessageHub hub;
     private readonly ILogger<PurchaseStateMachine> logger;
+    private readonly Counter<int> purchaseStartedCounter;
+    private readonly Counter<int> purchaseSuccessCounter;
+    private readonly Counter<int> purchaseFailedCounter;
     public State Accepted { get; }
     public State ItemsGranted { get; }
     public State Completed { get; }
@@ -25,7 +32,7 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
     public Event<Fault<DebitGil>> DebitGilFaulted { get;}
     public Event<GilDebited> GilDebited { get; }
 
-    public PurchaseStateMachine(MessageHub hub, ILogger<PurchaseStateMachine> logger)
+    public PurchaseStateMachine(MessageHub hub, ILogger<PurchaseStateMachine> logger, IConfiguration configuration)
     {
         InstanceState(state => state.CurrentState);
         ConfigureEvents();
@@ -37,6 +44,12 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
         ConfigureCompleted();
         this.hub = hub;
         this.logger = logger;
+
+        var settings = configuration.GetSection(nameof(ServiceSettings)).Get<ServiceSettings>();
+        Meter meter= new Meter(settings.ServiceName);
+        purchaseStartedCounter = meter.CreateCounter<int>("PurchaseStarted");
+        purchaseSuccessCounter = meter.CreateCounter<int>("PurchaseSuccess");
+        purchaseFailedCounter = meter.CreateCounter<int>("PurchaseFailed");
     }
 
     private void ConfigureEvents()
@@ -63,6 +76,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                         "Calculating total price for purchase with correlationId {CorrelationId}...",
                         context.Saga.CorrelationId
                     );
+                    purchaseStartedCounter.Add(1, new KeyValuePair<string, object>(
+                        nameof(context.Saga.ItemId),
+                        context.Saga.ItemId));
                 })
                 .Activity(x => x.OfType<CalculatePurchaseTotalActivity>())
                 .Send(context => new GrantItems(
@@ -82,6 +98,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                             context.Saga.CorrelationId,
                             context.Saga.ErrorMessage
                         );
+                        purchaseFailedCounter.Add(1, new KeyValuePair<string, object>(
+                        nameof(context.Saga.ItemId),
+                        context.Saga.ItemId));
                     })
                     .TransitionTo(Faulted)
                     .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))
@@ -119,6 +138,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                         context.Saga.CorrelationId,
                         context.Saga.ErrorMessage
                     );
+                    purchaseFailedCounter.Add(1, new KeyValuePair<string, object>(
+                        nameof(context.Saga.ItemId),
+                        context.Saga.ItemId));
                 })
                 .TransitionTo(Faulted)
                 .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))
@@ -139,6 +161,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                         context.Saga.CorrelationId,
                         context.Saga.UserId
                     );
+                    purchaseSuccessCounter.Add(1, new KeyValuePair<string, object>(
+                        nameof(context.Saga.ItemId),
+                        context.Saga.ItemId));
                 })
                 .TransitionTo(Completed)
                 .ThenAsync(async context => {
@@ -161,6 +186,9 @@ public class PurchaseStateMachine : MassTransitStateMachine<PurchaseState>
                         context.Saga.UserId,
                         context.Saga.ErrorMessage
                     );
+                    purchaseFailedCounter.Add(1, new KeyValuePair<string, object>(
+                        nameof(context.Saga.ItemId),
+                        context.Saga.ItemId));
                 })
                 .TransitionTo(Faulted)
                 .ThenAsync(async context => await hub.SendStatusAsync(context.Saga))

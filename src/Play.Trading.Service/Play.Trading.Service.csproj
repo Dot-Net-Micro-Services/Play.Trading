@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="MassTransit.MongoDb" Version="8.0.2" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus" Version="1.2.0-rc5" />
     <PackageReference Include="Play.Catalog.Contracts" Version="1.0.2" />
     <PackageReference Include="Play.Common" Version="1.0.13" />
     <PackageReference Include="Play.Identity.Contracts" Version="1.0.2" />
